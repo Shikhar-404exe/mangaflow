@@ -1,0 +1,16 @@
+{
+  "mappings": {
+    "properties": {
+      "page_id":             { "type": "keyword" },
+      "manga_title":         { "type": "keyword" },
+      "chapter":             { "type": "integer" },
+      "page":                { "type": "integer" },
+      "status":              { "type": "keyword" },
+      "total_regions":       { "type": "integer" },
+      "regions_translated":  { "type": "integer" },
+      "is_colored":          { "type": "boolean" },
+      "output_path":         { "type": "keyword" },
+      "processed_at":        { "type": "date" }
+    }
+  }
+}

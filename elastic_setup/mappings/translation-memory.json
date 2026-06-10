@@ -1,0 +1,19 @@
+{
+  "mappings": {
+    "properties": {
+      "entry_id":            { "type": "keyword" },
+      "region_id":           { "type": "keyword" },
+      "original_jp":         { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "translation_en":      { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "manga_title":         { "type": "keyword" },
+      "chapter":             { "type": "integer" },
+      "page":                { "type": "integer" },
+      "speaker":             { "type": "keyword" },
+      "confidence":          { "type": "float" },
+      "translator_notes":    { "type": "text" },
+      "glossary_terms_used": { "type": "keyword" },
+      "verified":            { "type": "boolean" },
+      "created_at":          { "type": "date" }
+    }
+  }
+}

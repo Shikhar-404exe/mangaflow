@@ -1,0 +1,19 @@
+{
+  "mappings": {
+    "properties": {
+      "manga_title":      { "type": "keyword" },
+      "character_name":   { "type": "keyword" },
+      "colors": {
+        "properties": {
+          "hair":         { "type": "text" },
+          "eyes":         { "type": "text" },
+          "skin":         { "type": "text" },
+          "outfit":       { "type": "text" },
+          "accessories":  { "type": "text" }
+        }
+      },
+      "notes":            { "type": "text" },
+      "created_at":       { "type": "date" }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "mappings": {
+    "properties": {
+      "report_id":   { "type": "keyword" },
+      "manga_title": { "type": "keyword" },
+      "chapter":     { "type": "integer" },
+      "page":        { "type": "integer" },
+      "scores": {
+        "properties": {
+          "translation_accuracy": { "type": "integer" },
+          "text_completeness":    { "type": "integer" },
+          "visual_quality":       { "type": "integer" },
+          "consistency":          { "type": "integer" },
+          "readability":          { "type": "integer" },
+          "overall":              { "type": "float" }
+        }
+      },
+      "issues":      { "type": "text" },
+      "status":      { "type": "keyword" },
+      "created_at":  { "type": "date" }
+    }
+  }
+}

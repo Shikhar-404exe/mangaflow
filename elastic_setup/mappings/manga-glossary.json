@@ -1,0 +1,12 @@
+{
+  "mappings": {
+    "properties": {
+      "term_jp":      { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "term_en":      { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "manga_title":  { "type": "keyword" },
+      "category":     { "type": "keyword" },
+      "notes":        { "type": "text" },
+      "created_at":   { "type": "date" }
+    }
+  }
+}
