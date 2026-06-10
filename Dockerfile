@@ -2,16 +2,18 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system build tools + Pillow dependencies
+# Build tools + Pillow system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ \
-    libjpeg-dev zlib1g-dev libpng-dev libfreetype6-dev \
+    gcc g++ libjpeg-dev zlib1g-dev libpng-dev libfreetype6-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip first to avoid resolver issues
+RUN pip install --upgrade pip
 
 COPY requirements.txt .
 
-# Use verbose pip so Cloud Build logs show exactly which package fails
-RUN pip install --no-cache-dir -v -r requirements.txt 2>&1
+# Install with verbose logging so Cloud Logging captures the exact failure
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
