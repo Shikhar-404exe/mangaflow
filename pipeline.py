@@ -1,15 +1,17 @@
-"""MangaFlow pipeline — image in → detect → translate → clean → colorize → image out."""
+"""MangaFlow pipeline — image in → detect → translate → clean → colorize → image out.
+Uses OpenRouter/GPT-4o for vision/translation, gpt-image-1 (or PIL fallback) for images.
+"""
 import base64
 import json
 from io import BytesIO
 from PIL import Image
-from google import genai
-from core.config import Config
+from core.config import Config, get_text_client
 from agents.cleaner.tools import clean_and_typeset_page
 from agents.colorizer.tools import colorize_manga_page
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
+
 
 def _to_b64(img: Image.Image) -> str:
     buf = BytesIO()
@@ -18,7 +20,7 @@ def _to_b64(img: Image.Image) -> str:
 
 
 def _prepare_image(image_bytes: bytes) -> tuple[str, int, int]:
-    """Decode, normalise to RGB, resize if > 1500px, return (b64, w, h)."""
+    """Decode, normalise to RGB, resize if > 1500 px, return (b64, w, h)."""
     img = Image.open(BytesIO(image_bytes))
     if img.mode == "RGBA":
         bg = Image.new("RGB", img.size, (255, 255, 255))
@@ -30,39 +32,54 @@ def _prepare_image(image_bytes: bytes) -> tuple[str, int, int]:
     max_dim = 1500
     if max(img.size) > max_dim:
         ratio = max_dim / max(img.size)
-        img = img.resize((int(img.width * ratio), int(img.height * ratio)),
-                         Image.LANCZOS)
+        img = img.resize(
+            (int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS
+        )
     return _to_b64(img), img.width, img.height
 
 
 # ── step 1: detect ───────────────────────────────────────────────────────────
 
 def detect_bubbles(image_b64: str) -> list[dict]:
-    """Ask Gemini Vision to find speech bubbles and extract text."""
-    client = genai.Client(api_key=Config.GEMINI_API_KEY)
-    img = Image.open(BytesIO(base64.b64decode(image_b64)))
+    """Use GPT-4o Vision (via OpenRouter) to find speech bubbles and extract text."""
+    client, model = get_text_client()
 
     prompt = (
         "Analyze this manga panel. Find ALL speech bubbles, thought bubbles, "
         "narration boxes, and sound effects (SFX).\n\n"
-        "For each region return a JSON object:\n"
-        '  "region_id": unique id e.g. "bubble_1"\n'
+        "For each text region return a JSON object with:\n"
+        '  "region_id": unique id like "bubble_1", "sfx_1"\n'
         '  "original_text": exact text inside (empty string if illegible)\n'
-        '  "position": {"x": <center_x_pct>, "y": <center_y_pct>}\n'
+        '  "position": {"x": <center_x_percent>, "y": <center_y_percent>}\n'
         '  "bubble_type": "speech" | "thought" | "narration" | "sfx"\n'
-        '  "needs_translation": true if NOT already English\n\n'
-        "Return ONLY a valid JSON array. If no text found, return []."
+        '  "needs_translation": true if text is NOT English\n\n'
+        "Return ONLY a valid JSON object with key 'bubbles' containing the array.\n"
+        'Example: {"bubbles": [{"region_id":"bubble_1","original_text":"こんにちは",'
+        '"position":{"x":25,"y":15},"bubble_type":"speech","needs_translation":true}]}\n'
+        "If no text found, return: {\"bubbles\": []}"
     )
 
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=[img, prompt],
-        config=genai.types.GenerateContentConfig(
-            response_mime_type="application/json"
-        ),
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+                    },
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ],
+        response_format={"type": "json_object"},
+        max_tokens=1500,
     )
+
     try:
-        bubbles = json.loads(response.text)
+        data = json.loads(response.choices[0].message.content)
+        bubbles = data.get("bubbles", data) if isinstance(data, dict) else data
         return bubbles if isinstance(bubbles, list) else []
     except Exception:
         return []
@@ -91,40 +108,46 @@ def _fetch_glossary(manga_title: str) -> str:
 
 
 def translate_bubbles(bubbles: list, manga_title: str = "Unknown") -> list[dict]:
-    """Translate each bubble that needs_translation using Gemini + glossary."""
+    """Translate each bubble that needs_translation using GPT-4o (OpenRouter) + Elastic glossary."""
     to_translate = [
         b for b in bubbles
         if b.get("needs_translation") and b.get("original_text")
     ]
     if not to_translate:
-        # mark already-English bubbles
         for b in bubbles:
             if not b.get("needs_translation"):
                 b["translation_en"] = b.get("original_text", "")
         return bubbles
 
     glossary = _fetch_glossary(manga_title)
-    client = genai.Client(api_key=Config.GEMINI_API_KEY)
+    client, model = get_text_client()
     texts = [{"id": b["region_id"], "text": b["original_text"]} for b in to_translate]
 
-    prompt = (
-        "You are a professional manga translator. Translate to natural English.\n"
-        "Keep the character's voice. Use short sentences that fit in a speech bubble.\n"
+    system_msg = (
+        "You are a professional manga translator. Translate each entry to natural, "
+        "expressive English suitable for speech bubbles. Keep sentences short. "
+        "Preserve emotion and character voice."
+    )
+    user_msg = (
         f"{glossary}\n\n"
-        "Return ONLY a JSON array: "
-        '[{"id":"bubble_1","translation":"English text"}, ...]\n\n'
+        "Translate each entry. Return ONLY a JSON object with key 'translations':\n"
+        '{"translations": [{"id": "bubble_1", "translation": "English text"}, ...]}\n\n'
         f"Entries:\n{json.dumps(texts, ensure_ascii=False)}"
     )
 
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=[prompt],
-        config=genai.types.GenerateContentConfig(
-            response_mime_type="application/json"
-        ),
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ],
+        response_format={"type": "json_object"},
+        max_tokens=1000,
     )
+
     try:
-        results = json.loads(response.text)
+        data = json.loads(response.choices[0].message.content)
+        results = data.get("translations", data) if isinstance(data, dict) else data
         trans_map = {r["id"]: r["translation"] for r in results}
     except Exception:
         trans_map = {}
@@ -148,14 +171,14 @@ def run_pipeline(
 ):
     """
     Synchronous generator. Yields progress dicts.
-    Final event has step="done" and contains the result image.
+    Final event has step='done' and contains the result image as base64.
     """
     # ── load ──
     yield {"step": "loading", "pct": 5, "msg": "Loading image..."}
     image_b64, w, h = _prepare_image(image_bytes)
 
     # ── detect ──
-    yield {"step": "detecting", "pct": 20, "msg": "Scanning for speech bubbles..."}
+    yield {"step": "detecting", "pct": 20, "msg": "Scanning for speech bubbles with GPT-4o..."}
     bubbles = detect_bubbles(image_b64)
     foreign_count = len([b for b in bubbles if b.get("needs_translation")])
 
@@ -168,7 +191,7 @@ def run_pipeline(
             yield {
                 "step": "translating",
                 "pct": 40,
-                "msg": f"Translating {foreign_count} bubble(s)...",
+                "msg": f"Translating {foreign_count} bubble(s) with GPT-4o...",
             }
             bubbles = translate_bubbles(bubbles, manga_title)
             translations_out = [
@@ -194,19 +217,29 @@ def run_pipeline(
                 for b in bubbles
             ]
 
-            yield {"step": "cleaning", "pct": 60,
-                   "msg": "Removing original text and placing English..."}
+            yield {
+                "step": "cleaning",
+                "pct": 60,
+                "msg": "Removing original text and placing English with gpt-image-1...",
+            }
             clean = clean_and_typeset_page(image_b64, regions)
             if clean.get("status") == "success":
                 processed_b64 = clean["edited_image_base64"]
+            # if cleaning failed, processed_b64 stays as original (graceful fallback)
         else:
-            yield {"step": "translating", "pct": 60,
-                   "msg": "No foreign text detected — panel already in English"}
+            yield {
+                "step": "translating",
+                "pct": 60,
+                "msg": "No foreign text detected — panel already in English",
+            }
 
     # ── colorize ──
     if do_colorize:
-        yield {"step": "colorizing", "pct": 80,
-               "msg": "Applying vibrant anime-style colors..."}
+        yield {
+            "step": "colorizing",
+            "pct": 80,
+            "msg": "Applying vibrant anime-style colors with gpt-image-1...",
+        }
         color = colorize_manga_page(
             processed_b64,
             "Vibrant anime-style coloring. Preserve all line art and panel borders exactly.",
@@ -216,7 +249,6 @@ def run_pipeline(
 
     # ── quality ──
     yield {"step": "quality", "pct": 95, "msg": "Running quality check..."}
-    quality = 90 if translations_out else 85
 
     yield {
         "step": "done",
@@ -225,7 +257,7 @@ def run_pipeline(
         "original_b64": image_b64,
         "translations": translations_out,
         "bubbles_found": len(bubbles),
-        "quality_score": quality,
+        "quality_score": 90 if translations_out else 85,
         "width": w,
         "height": h,
     }
