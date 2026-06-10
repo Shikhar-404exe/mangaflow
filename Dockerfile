@@ -19,4 +19,5 @@ COPY . .
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "adk web agents/ --host 0.0.0.0 --port ${PORT:-8080} --no-reload --session_service_uri=memory://"]
+# Use uvicorn to serve the FastAPI upload app
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8080}"]

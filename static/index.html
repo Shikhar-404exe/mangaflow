@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>MangaFlow — AI Manga Translation & Colorization</title>
+<meta name="description" content="Upload a manga panel and watch AI translate speech bubbles and add full color in seconds."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #07070f;
+    --surface:  #0f0f1e;
+    --card:     #13132a;
+    --border:   #1e1e3f;
+    --purple:   #8b5cf6;
+    --pink:     #ec4899;
+    --cyan:     #22d3ee;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --success:  #10b981;
+    --radius:   16px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── animated bg ───────────────────────────────── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 20%, rgba(139,92,246,.12) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 80%, rgba(236,72,153,.08) 0%, transparent 60%);
+    pointer-events: none; z-index: 0;
+  }
+
+  /* ── layout ────────────────────────────────────── */
+  .wrap { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+
+  /* ── header ─────────────────────────────────────── */
+  header { text-align: center; padding: 52px 0 36px; }
+  .logo {
+    font-family: 'Bangers', cursive;
+    font-size: clamp(48px, 8vw, 80px);
+    letter-spacing: 4px;
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+  }
+  .tagline {
+    margin-top: 10px;
+    font-size: 15px;
+    color: var(--muted);
+    font-weight: 400;
+    letter-spacing: .5px;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(139,92,246,.15); border: 1px solid rgba(139,92,246,.3);
+    color: var(--purple); border-radius: 99px;
+    font-size: 12px; font-weight: 600; padding: 4px 12px;
+    margin-top: 14px; letter-spacing: .5px;
+  }
+  .badge span { width: 6px; height: 6px; background: var(--purple); border-radius: 50%; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.5)} }
+
+  /* ── upload card ─────────────────────────────────── */
+  .upload-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px;
+    margin-bottom: 24px;
+  }
+
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 56px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .25s;
+    position: relative;
+    overflow: hidden;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--purple);
+    background: rgba(139,92,246,.06);
+  }
+  .drop-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .drop-icon { font-size: 52px; margin-bottom: 16px; filter: grayscale(40%); }
+  .drop-zone h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .drop-zone p { font-size: 14px; color: var(--muted); }
+  .drop-zone .formats {
+    display: inline-block; margin-top: 12px;
+    background: rgba(255,255,255,.05); border-radius: 6px;
+    padding: 4px 12px; font-size: 12px; color: var(--muted);
+  }
+
+  /* preview */
+  .preview-thumb {
+    max-width: 200px; max-height: 200px;
+    border-radius: 8px; margin: 0 auto 8px;
+    display: none; object-fit: contain;
+  }
+  .preview-name { font-size: 13px; color: var(--purple); display: none; margin-top: 6px; }
+
+  /* ── options row ─────────────────────────────────── */
+  .options {
+    display: flex; flex-wrap: wrap; gap: 16px;
+    margin-top: 24px; align-items: flex-end;
+  }
+  .opt-group { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 180px; }
+  .opt-group label { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+  .opt-group input[type=text] {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px;
+    padding: 10px 14px; font-size: 14px; font-family: inherit;
+    transition: border-color .2s; outline: none;
+  }
+  .opt-group input[type=text]:focus { border-color: var(--purple); }
+
+  .toggle-row { display: flex; gap: 12px; }
+  .toggle-item { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .toggle-item span { font-size: 14px; font-weight: 500; }
+  .toggle {
+    position: relative; width: 44px; height: 24px;
+    background: var(--border); border-radius: 99px;
+    transition: background .2s; flex-shrink: 0;
+  }
+  .toggle::after {
+    content: ''; position: absolute; width: 18px; height: 18px;
+    background: white; border-radius: 50%; top: 3px; left: 3px;
+    transition: transform .2s;
+  }
+  .toggle.on { background: linear-gradient(135deg, var(--purple), var(--pink)); }
+  .toggle.on::after { transform: translateX(20px); }
+
+  /* ── process button ──────────────────────────────── */
+  .btn-process {
+    width: 100%; padding: 15px;
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    border: none; border-radius: 12px;
+    color: white; font-size: 16px; font-weight: 700;
+    font-family: inherit; cursor: pointer; margin-top: 24px;
+    letter-spacing: .5px; transition: opacity .2s, transform .1s;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .btn-process:hover:not(:disabled) { opacity: .9; }
+  .btn-process:active:not(:disabled) { transform: scale(.99); }
+  .btn-process:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── progress ────────────────────────────────────── */
+  .progress-section {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 28px 32px;
+    margin-bottom: 24px; display: none;
+  }
+  .progress-section.visible { display: block; }
+  .progress-title { font-size: 14px; font-weight: 600; margin-bottom: 20px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+
+  .steps { display: flex; gap: 0; margin-bottom: 24px; position: relative; }
+  .steps::before {
+    content: ''; position: absolute; top: 16px; left: 32px; right: 32px;
+    height: 2px; background: var(--border); z-index: 0;
+  }
+  .step {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    gap: 8px; position: relative; z-index: 1;
+  }
+  .step-dot {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--surface); border: 2px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; transition: all .3s;
+  }
+  .step.active .step-dot {
+    border-color: var(--purple);
+    background: rgba(139,92,246,.2);
+    animation: step-pulse 1.2s infinite;
+  }
+  .step.done .step-dot {
+    border-color: var(--success);
+    background: rgba(16,185,129,.2);
+  }
+  @keyframes step-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(139,92,246,.4)} 50%{box-shadow:0 0 0 8px rgba(139,92,246,0)} }
+  .step-label { font-size: 11px; color: var(--muted); text-align: center; font-weight: 500; }
+  .step.active .step-label { color: var(--purple); }
+  .step.done .step-label { color: var(--success); }
+
+  .progress-bar-wrap { background: var(--surface); border-radius: 99px; height: 6px; overflow: hidden; }
+  .progress-bar { height: 100%; background: linear-gradient(90deg, var(--purple), var(--pink)); border-radius: 99px; transition: width .5s ease; width: 0%; }
+  .progress-msg { font-size: 14px; color: var(--muted); margin-top: 12px; min-height: 20px; }
+
+  /* ── results ─────────────────────────────────────── */
+  .results-section {
+    display: none; flex-direction: column; gap: 24px;
+  }
+  .results-section.visible { display: flex; }
+
+  .compare {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+  @media (max-width: 640px) { .compare { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .panel-label {
+    padding: 12px 18px; font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-label.before { color: var(--muted); }
+  .panel-label.after { color: var(--purple); }
+  .panel img { width: 100%; display: block; }
+
+  /* stats row */
+  .stats { display: flex; gap: 12px; flex-wrap: wrap; }
+  .stat-card {
+    flex: 1; min-width: 140px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 20px;
+  }
+  .stat-num { font-size: 28px; font-weight: 700; font-family: 'Bangers', cursive; letter-spacing: 1px; }
+  .stat-num.purple { color: var(--purple); }
+  .stat-num.pink { color: var(--pink); }
+  .stat-num.cyan { color: var(--cyan); }
+  .stat-num.green { color: var(--success); }
+  .stat-label { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* translations list */
+  .trans-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px;
+  }
+  .trans-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 16px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+  .trans-list { display: flex; flex-direction: column; gap: 10px; }
+  .trans-item {
+    background: var(--surface); border-radius: 10px; padding: 12px 16px;
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
+  }
+  .trans-orig { font-size: 14px; color: var(--muted); }
+  .trans-arrow { color: var(--purple); font-size: 18px; }
+  .trans-en { font-size: 14px; font-weight: 500; }
+  .no-trans { color: var(--muted); font-size: 14px; font-style: italic; }
+
+  /* download */
+  .btn-download {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    color: white; border: none; border-radius: 10px;
+    padding: 12px 24px; font-size: 15px; font-weight: 600;
+    font-family: inherit; cursor: pointer; text-decoration: none;
+    transition: opacity .2s;
+  }
+  .btn-download:hover { opacity: .88; }
+  .btn-again {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text); border-radius: 10px;
+    padding: 12px 24px; font-size: 15px; font-weight: 600;
+    font-family: inherit; cursor: pointer;
+    transition: border-color .2s;
+  }
+  .btn-again:hover { border-color: var(--purple); }
+
+  .action-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+  /* error */
+  .error-banner {
+    background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3);
+    color: #fca5a5; border-radius: 12px; padding: 16px 20px;
+    font-size: 14px; display: none; margin-bottom: 16px;
+  }
+  .error-banner.visible { display: block; }
+
+  /* quality chip */
+  .quality-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(16,185,129,.15); border: 1px solid rgba(16,185,129,.3);
+    color: var(--success); border-radius: 99px;
+    padding: 4px 12px; font-size: 12px; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">MangaFlow</div>
+    <p class="tagline">AI-powered manga translation & colorization — powered by Gemini + Elastic</p>
+    <div class="badge"><span></span> Powered by Google ADK</div>
+  </header>
+
+  <!-- Upload Card -->
+  <div class="upload-card" id="uploadCard">
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept="image/*"/>
+      <div id="dropContent">
+        <div class="drop-icon">🖼️</div>
+        <h3>Drop your manga panel here</h3>
+        <p>or click to browse</p>
+        <span class="formats">PNG · JPG · WEBP</span>
+      </div>
+      <img class="preview-thumb" id="previewThumb" alt="preview"/>
+      <div class="preview-name" id="previewName"></div>
+    </div>
+
+    <div class="options">
+      <div class="opt-group">
+        <label>Manga Title (for glossary lookup)</label>
+        <input type="text" id="mangaTitle" placeholder="e.g. Dragon Spirit" value="Unknown"/>
+      </div>
+
+      <div class="opt-group">
+        <label>Options</label>
+        <div class="toggle-row">
+          <label class="toggle-item" onclick="toggleOpt('translate')">
+            <div class="toggle on" id="toggle-translate"></div>
+            <span>Translate</span>
+          </label>
+          <label class="toggle-item" onclick="toggleOpt('colorize')">
+            <div class="toggle on" id="toggle-colorize"></div>
+            <span>Colorize</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="error-banner" id="errorBanner"></div>
+
+    <button class="btn-process" id="processBtn" disabled onclick="startProcess()">
+      <span>⚡</span> Process Panel
+    </button>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-section" id="progressSection">
+    <div class="progress-title">Pipeline Running</div>
+    <div class="steps">
+      <div class="step" id="step-loading">
+        <div class="step-dot">📥</div>
+        <div class="step-label">Load</div>
+      </div>
+      <div class="step" id="step-detecting">
+        <div class="step-dot">🔍</div>
+        <div class="step-label">Detect</div>
+      </div>
+      <div class="step" id="step-translating">
+        <div class="step-dot">🌐</div>
+        <div class="step-label">Translate</div>
+      </div>
+      <div class="step" id="step-cleaning">
+        <div class="step-dot">✏️</div>
+        <div class="step-label">Clean</div>
+      </div>
+      <div class="step" id="step-colorizing">
+        <div class="step-dot">🎨</div>
+        <div class="step-label">Colorize</div>
+      </div>
+      <div class="step" id="step-quality">
+        <div class="step-dot">✅</div>
+        <div class="step-label">Quality</div>
+      </div>
+    </div>
+    <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar"></div></div>
+    <div class="progress-msg" id="progressMsg">Starting pipeline...</div>
+  </div>
+
+  <!-- Results -->
+  <div class="results-section" id="resultsSection">
+
+    <!-- Stats -->
+    <div class="stats" id="statsRow">
+      <div class="stat-card">
+        <div class="stat-num purple" id="statBubbles">—</div>
+        <div class="stat-label">Bubbles Found</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num pink" id="statTranslated">—</div>
+        <div class="stat-label">Translated</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num cyan" id="statQuality">—</div>
+        <div class="stat-label">Quality Score</div>
+      </div>
+    </div>
+
+    <!-- Before / After -->
+    <div class="compare">
+      <div class="panel">
+        <div class="panel-label before">⬛ Before</div>
+        <img id="imgBefore" src="" alt="original panel"/>
+      </div>
+      <div class="panel">
+        <div class="panel-label after">✨ After</div>
+        <img id="imgAfter" src="" alt="processed panel"/>
+      </div>
+    </div>
+
+    <!-- Translations -->
+    <div class="trans-card">
+      <h3>Translations</h3>
+      <div class="trans-list" id="transList"></div>
+    </div>
+
+    <!-- Actions -->
+    <div class="action-row">
+      <a class="btn-download" id="downloadBtn" download="mangaflow_result.png">⬇️ Download Result</a>
+      <button class="btn-again" onclick="resetUI()">↩ Process Another</button>
+      <div class="quality-chip" id="qualityChip">✓ Quality: —</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const opts = { translate: true, colorize: true };
+  let originalB64 = null;
+
+  // ── file handling ─────────────────────────────────
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  });
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+  function handleFile(f) {
+    const thumb = document.getElementById('previewThumb');
+    const name  = document.getElementById('previewName');
+    const drop  = document.getElementById('dropContent');
+    const url   = URL.createObjectURL(f);
+    thumb.src = url; thumb.style.display = 'block';
+    name.textContent  = f.name; name.style.display = 'block';
+    drop.style.display = 'none';
+    document.getElementById('processBtn').disabled = false;
+    // store file on input (for form submission)
+    const dt = new DataTransfer(); dt.items.add(f); fileInput.files = dt.files;
+  }
+
+  // ── toggles ───────────────────────────────────────
+  function toggleOpt(key) {
+    opts[key] = !opts[key];
+    const el = document.getElementById('toggle-' + key);
+    el.classList.toggle('on', opts[key]);
+  }
+
+  // ── process ───────────────────────────────────────
+  async function startProcess() {
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    showError('');
+    document.getElementById('uploadCard').style.opacity = '.5';
+    document.getElementById('uploadCard').style.pointerEvents = 'none';
+    document.getElementById('processBtn').disabled = true;
+    document.getElementById('progressSection').classList.add('visible');
+    document.getElementById('resultsSection').classList.remove('visible');
+
+    resetSteps();
+
+    const form = new FormData();
+    form.append('file', file);
+    form.append('translate', opts.translate ? 'true' : 'false');
+    form.append('colorize', opts.colorize ? 'true' : 'false');
+    form.append('manga_title', document.getElementById('mangaTitle').value || 'Unknown');
+
+    try {
+      const res = await fetch('/api/process', { method: 'POST', body: form });
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try { handleEvent(JSON.parse(line.slice(6))); } catch(e) {}
+          }
+        }
+      }
+    } catch (err) {
+      showError('Connection error: ' + err.message);
+      document.getElementById('uploadCard').style.opacity = '1';
+      document.getElementById('uploadCard').style.pointerEvents = '';
+      document.getElementById('processBtn').disabled = false;
+    }
+  }
+
+  function handleEvent(evt) {
+    if (evt.step === 'error') { showError(evt.msg); return; }
+
+    // update progress bar + message
+    document.getElementById('progressBar').style.width = (evt.pct || 0) + '%';
+    document.getElementById('progressMsg').textContent  = evt.msg || '';
+
+    // update step indicators
+    const stepMap = {
+      loading: 'loading', detecting: 'detecting',
+      translating: 'translating', cleaning: 'cleaning',
+      colorizing: 'colorizing', quality: 'quality', done: 'quality'
+    };
+    const stepOrder = ['loading','detecting','translating','cleaning','colorizing','quality'];
+    const current   = stepMap[evt.step] || evt.step;
+    const idx       = stepOrder.indexOf(current);
+
+    stepOrder.forEach((s, i) => {
+      const el = document.getElementById('step-' + s);
+      if (!el) return;
+      el.classList.remove('active','done');
+      if (i < idx) el.classList.add('done');
+      else if (i === idx) el.classList.add('active');
+    });
+
+    if (evt.step === 'done') {
+      stepOrder.forEach(s => {
+        const el = document.getElementById('step-' + s);
+        if (el) { el.classList.remove('active'); el.classList.add('done'); }
+      });
+      showResults(evt);
+    }
+  }
+
+  function showResults(evt) {
+    // stats
+    document.getElementById('statBubbles').textContent   = evt.bubbles_found ?? '—';
+    document.getElementById('statTranslated').textContent = (evt.translations || []).length;
+    document.getElementById('statQuality').textContent    = (evt.quality_score ?? '—') + '%';
+    document.getElementById('qualityChip').textContent    = '✓ Quality: ' + (evt.quality_score ?? '—') + '%';
+
+    // images
+    const orig = 'data:image/png;base64,' + evt.original_b64;
+    const proc = 'data:image/png;base64,' + evt.image_b64;
+    document.getElementById('imgBefore').src = orig;
+    document.getElementById('imgAfter').src  = proc;
+
+    // download
+    const dl = document.getElementById('downloadBtn');
+    dl.href = proc;
+
+    // translations
+    const list = document.getElementById('transList');
+    list.innerHTML = '';
+    if (evt.translations && evt.translations.length > 0) {
+      evt.translations.forEach(t => {
+        const div = document.createElement('div');
+        div.className = 'trans-item';
+        div.innerHTML =
+          `<div class="trans-orig">${esc(t.original)}</div>
+           <div class="trans-arrow">→</div>
+           <div class="trans-en">${esc(t.translation)}</div>`;
+        list.appendChild(div);
+      });
+    } else {
+      list.innerHTML = '<div class="no-trans">No translations needed — panel already in English, or no text detected.</div>';
+    }
+
+    document.getElementById('progressSection').classList.remove('visible');
+    document.getElementById('resultsSection').classList.add('visible');
+    document.getElementById('uploadCard').style.opacity = '1';
+    document.getElementById('uploadCard').style.pointerEvents = '';
+  }
+
+  function resetSteps() {
+    ['loading','detecting','translating','cleaning','colorizing','quality'].forEach(s => {
+      const el = document.getElementById('step-' + s);
+      if (el) el.classList.remove('active','done');
+    });
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressMsg').textContent = 'Starting pipeline...';
+  }
+
+  function resetUI() {
+    document.getElementById('resultsSection').classList.remove('visible');
+    document.getElementById('progressSection').classList.remove('visible');
+    document.getElementById('uploadCard').style.opacity = '1';
+    document.getElementById('uploadCard').style.pointerEvents = '';
+    document.getElementById('processBtn').disabled = true;
+    document.getElementById('previewThumb').style.display = 'none';
+    document.getElementById('previewName').style.display = 'none';
+    document.getElementById('dropContent').style.display = '';
+    fileInput.value = '';
+    showError('');
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('errorBanner');
+    el.textContent = msg;
+    el.classList.toggle('visible', !!msg);
+    if (msg) {
+      document.getElementById('progressSection').classList.remove('visible');
+      document.getElementById('uploadCard').style.opacity = '1';
+      document.getElementById('uploadCard').style.pointerEvents = '';
+      document.getElementById('processBtn').disabled = false;
+    }
+  }
+
+  function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>
